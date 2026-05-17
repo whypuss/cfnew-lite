@@ -1716,6 +1716,32 @@
             finalLinks.push(errorLink);
         }
 
+
+        // 过滤 -1ms 节点（测试延迟，删除失败的）
+        const testedLinks = [];
+        const testPromises = finalLinks.map(async (link) => {
+            try {
+                // 从订阅链接中提取 host 和 port
+                const match = link.match(/@([^:]+):(\d+)\?/);
+                if (match) {
+                    const host = match[1].replace(/\[/, '').replace(/\]/, '');
+                    const port = parseInt(match[2], 10);
+                    const result = await checkIPAvailability(host, port, 2000);
+                    if (result.success && result.latency >= 0) {
+                        testedLinks.push(link);
+                    }
+                } else {
+                    // 无法解析的链接，保留
+                    testedLinks.push(link);
+                }
+            } catch (e) {
+                // 测试失败的链接，丢弃
+            }
+        });
+        await Promise.all(testPromises);
+        finalLinks.length = 0;
+        finalLinks.push(...testedLinks);
+
         let subscriptionContent;
         let contentType = 'text/plain; charset=utf-8';
 
@@ -1954,12 +1980,12 @@
         try {
             const fetchPromises = [];
             if (ipv4Enabled) {
-                fetchPromises.push(fetchAndParseWetest(v4Url1));
+                fetchPromises.push(fetchAndParseWetest(v4Url1, 'v4'));
             } else {
                 fetchPromises.push(Promise.resolve([]));
             }
             if (ipv6Enabled) {
-                fetchPromises.push(fetchAndParseWetest(v6Url1));
+                fetchPromises.push(fetchAndParseWetest(v6Url1, 'v6'));
             } else {
                 fetchPromises.push(Promise.resolve([]));
             }
@@ -1967,6 +1993,14 @@
             const [ipv4List, ipv6List] = await Promise.all(fetchPromises);
             results = [...ipv4List, ...ipv6List];
 
+
+            // 按IP版本筛选
+            if (ipv4Enabled === false) {
+                results = results.filter(item => item.ip_version !== 'v4');
+            }
+            if (ipv6Enabled === false) {
+                results = results.filter(item => item.ip_version !== 'v6');
+            }
             // 按运营商筛选
             if (results.length > 0) {
                 results = results.filter(item => {
@@ -1986,7 +2020,7 @@
         return [];
     }
 
-    async function fetchAndParseWetest(url) {
+    async function fetchAndParseWetest(url, ipVersion = "unknown") {
         try {
             const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
             if (!response.ok) {
@@ -2007,6 +2041,7 @@
                         isp: cellMatch[1].trim().replace(/<.*?>/g, ''),
                         ip: cellMatch[2].trim(),
                         colo: colo
+                        ip_version: ipVersion,
                     });
                 }
             }
