@@ -1,0 +1,38 @@
+name: Deploy Worker Script
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy-worker:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Get tag
+        id: tag
+        run: |
+          TAG="v$(date +%Y%m%d%H%M%S)"
+          if [ -n "$(git tag --points-at HEAD)" ]; then
+            TAG=$(git tag --points-at HEAD | head -1)
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+      
+      - name: Create zip
+        run: |
+          cp "明文源吗" "_worker.js"
+          zip Pages.zip _worker.js wrangler.toml
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: Pages.zip
+          generate_release_notes: true
